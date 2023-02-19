@@ -30,15 +30,19 @@ for _, v in pairs(accessories) do
 	coroutine.wrap(function()
 		local item_info = MPS:GetProductInfo(v)
 		local item_model = IS:LoadAsset(v)
+		
 		for _, x in pairs(item_model:GetChildren()) do
+			
 			if x:IsA('Accessory') then
 				x.Parent = game.ReplicatedStorage.Accessories
 				x.Name = item_info.Name
 			end
+			
 			if x:IsA('Decal') then
 				x.Parent = game.ReplicatedStorage.Faces
 				x.Name = item_info.Name
 			end
+			
 			x:SetAttribute('Price', item_info.PriceInRobux or 1250)
 		end
 	end)()
@@ -74,10 +78,12 @@ end)
 game.Players.PlayerRemoving:Connect(function(plr : Player) -- Fires when the player leaves the server.
 	local key = 'Player_' .. plr.UserId
 	local count = 0
+	
 	while count < 5 do -- Makes five attempts to set the player's data.
 		local s, d = pcall(function()
 			DS:SetAsync(key, server_data[key])
 		end)
+		
 		if s then
 			server_data[key] = nil -- If the data has been set to the datastore successfully then remove the player's data from the temp server data table.
 			break
@@ -90,7 +96,10 @@ end)
 
 -- Removes all accessories a player may be wearing.
 game.ReplicatedStorage.RemoveAsset.OnServerEvent:Connect(function(plr : Player)
-	if not plr.Character then return end
+	if not plr.Character then 
+		return 
+	end
+	
 	for _, v in pairs(plr.Character:GetChildren()) do
 		if v:IsA('Accessory') then v:Destroy() end
 	end
@@ -99,7 +108,12 @@ end)
 -- Returns all the items a player owns.
 game.ReplicatedStorage.GetInventory.OnServerInvoke = function(plr : Player)
 	local key = 'Player_' .. plr.UserId
-	repeat task.wait() until server_data[key]
+	
+	repeat 
+		task.wait() 
+	until 
+	server_data[key]
+	
 	return server_data[key].Inventory
 end
 
@@ -130,31 +144,56 @@ end
 -- Checks to see if requested item exists (sanity check). If it does and the player is already wearing it, remove it from the player and end there.
 -- If it doesn't, check to see that they have no more than eight accessories on and add the item if they don't. Faces update the current face texture, whereas
 -- accessories are cloned and parented to the player's character.
+
+-- If the item is a gear, it has the player unequip all tools and checks to see if they have the gear already. If they do, it destroys it and returns. 
+-- If they don't, it gets cloned to their backpack.
+
 game.ReplicatedStorage.EquipAsset.OnServerEvent:Connect(function(plr : Player, item_name : string)
 	local item = get_item(item_name)
 	if item then
-		local existing = plr.Character:FindFirstChild(item_name)
-		
-		if existing then 
-			existing:Destroy()
-			return
-		else
-			local count = 0
-			for _, v in pairs(plr.Character:GetChildren()) do
-				if v:IsA('Accessory') then
-					count += 1
-				end
+		if item:IsA('Gear') then
+			local hum = plr.Character:WaitForChild('Humanoid')
+			hum:UnequipTools()
+			
+			local existing_item = plr.Backpack:FindFirstChild(item_name)
+			
+			if existing_item then
+				existing_item:Destroy()
+				return
+			else
+				item = item:Clone()
+				item.Parent = plr.Backpack
 			end
-			if count < 8 then
-				if item:IsA('Accessory') then
-					item = item:Clone()
-					item.Parent = plr.Character
-				elseif item:IsA('Decal') then
-					local head = plr.Character:FindFirstChild('Head')
-					
-					if head then
-						local face = head:FindFirstChildOfClass('Decal')
-						if face then face.Texture = item.Texture end
+		else
+			local existing = plr.Character:FindFirstChild(item_name)
+
+			if existing then 
+				existing:Destroy()
+				return
+			else
+				local count = 0
+
+				for _, v in pairs(plr.Character:GetChildren()) do
+					if v:IsA('Accessory') then
+						count += 1
+					end
+				end
+
+				if count < 8 then
+					if item:IsA('Accessory') then
+						item = item:Clone()
+						item.Parent = plr.Character
+
+					elseif item:IsA('Decal') then
+						local head = plr.Character:FindFirstChild('Head')
+
+						if head then
+							local face = head:FindFirstChildOfClass('Decal')
+
+							if face then 
+								face.Texture = item.Texture 
+							end
+						end
 					end
 				end
 			end
