@@ -7,9 +7,13 @@ local accessories = { -- A premade table of accesory IDs for the demo.
 local MPS = game:GetService('MarketplaceService') -- Get services and store references to them as variables.
 local IS = game:GetService('InsertService')
 local DSS = game:GetService('DataStoreService')
+local MS = game:GetService('MessagingService')
 
 local DS = DSS:GetDataStore('PlayerInventory') -- Get the player inventory store via the DataStoreService.
+local AS = DSS:GetDataStore('AssetStore') -- Holds all asset information not available through GetProductInfo().
+
 local server_data = {} -- Writing to the datastore every time a sale is made is bad practice, so we use a table to hold the data while the player is in the server instead.
+local asset_data = {}
 
 local function get_item(item_name : string) -- Searches for an item with the passed name in ReplicatedStorage. If found, returns it. Else returns nil.
 	for _, v in pairs(game.ReplicatedStorage:GetChildren()) do
@@ -24,29 +28,76 @@ local function get_item(item_name : string) -- Searches for an item with the pas
 	return nil
 end
 
+-- Runs when the game is loaded for the first time. Later runs can establish new inventory through external tools or manually.
 -- Uses the IS and MPS to get the names and prices for all accessories in the demo, and insert them into ReplicatedStorage
 -- Where both the client and the server can access them; the client renders them in ViewportFrames.
-for _, v in pairs(accessories) do 
-	coroutine.wrap(function()
-		local item_info = MPS:GetProductInfo(v)
-		local item_model = IS:LoadAsset(v)
-		
+local function init_assets()
+	for _, v in pairs(accessories) do 
+		coroutine.wrap(function()
+			local item_info = MPS:GetProductInfo(v)
+			local item_model = IS:LoadAsset(v)
+
+			for _, x in pairs(item_model:GetChildren()) do
+
+				if x:IsA('Accessory') then
+					x.Parent = game.ReplicatedStorage.Accessories
+					x.Name = item_info.Name
+				end
+
+				if x:IsA('Decal') then
+					x.Parent = game.ReplicatedStorage.Faces
+					x.Name = item_info.Name
+				end
+
+				x:SetAttribute('Price', item_info.PriceInRobux or 1250)
+				
+				asset_data[item_info.Name] = {
+					Owners = {}, 
+					ID = v, 
+					Price = item_info.PriceInRobux or 1250
+				}
+			end
+		end)()
+	end
+	AS:SetAsync('ASSETS', asset_data)
+end
+
+-- For subsequent runs of the game, or when new assets are added.
+local function load_assets(assets : table)
+	for i, v in pairs(assets) do
+		local item_model = IS:LoadAsset(v.ID)
 		for _, x in pairs(item_model:GetChildren()) do
-			
+
 			if x:IsA('Accessory') then
 				x.Parent = game.ReplicatedStorage.Accessories
-				x.Name = item_info.Name
+				x.Name = i
 			end
-			
+
 			if x:IsA('Decal') then
 				x.Parent = game.ReplicatedStorage.Faces
-				x.Name = item_info.Name
+				x.Name = i
 			end
-			
-			x:SetAttribute('Price', item_info.PriceInRobux or 1250)
+
+			x:SetAttribute('Price', v.PriceInRobux)
 		end
-	end)()
+	end
 end
+
+-- Attempt to get available asset information.
+local s, assets = pcall(function()
+	return AS:GetAsync('ASSETS')
+end)
+
+if s then
+	if assets then
+		load_assets(assets)
+	else
+		init_assets()
+	end
+else
+	init_assets()
+end
+
 
 game.Players.PlayerAdded:Connect(function(plr : Player) -- Event fires when a player joins.
 	local key = 'Player_' .. plr.UserId
@@ -186,7 +237,7 @@ game.ReplicatedStorage.EquipAsset.OnServerEvent:Connect(function(plr : Player, i
 
 					elseif item:IsA('Decal') then
 						local head = plr.Character:FindFirstChild('Head')
-
+						
 						if head then
 							local face = head:FindFirstChildOfClass('Decal')
 
@@ -195,6 +246,36 @@ game.ReplicatedStorage.EquipAsset.OnServerEvent:Connect(function(plr : Player, i
 							end
 						end
 					end
+				end
+			end
+		end
+	end
+end)
+
+-- This is where the game listens for new assets being created from external tools. It also utilizes a request variable to perform different tasks.
+
+MS:SubscribeAsync('EXTERNAL_RESPONDER', function(t : table)
+	local data = t.Data
+	if type(data) == 'table' then
+		if data.Request then
+			if data.Request == 'KICK_PLAYER' then
+				local ID = data.ID
+				local message = data.Message
+				
+				if ID and message then
+					for _, plr in pairs(game.Players:GetPlayers()) do
+						if plr.UserId == data.ID then
+							plr:Kick(message)
+							break
+						end
+					end
+				end
+			end
+			
+			if data.Request == 'ADD_ITEM' then
+				local new_asset_data = data.AssetData
+				if asset_data then
+					load_assets(new_asset_data) 
 				end
 			end
 		end
