@@ -159,12 +159,12 @@ end)
 -- Returns all the items a player owns.
 game.ReplicatedStorage.GetInventory.OnServerInvoke = function(plr : Player)
 	local key = 'Player_' .. plr.UserId
-	
+
 	repeat 
 		task.wait() 
 	until 
 	server_data[key]
-	
+
 	return server_data[key].Inventory
 end
 
@@ -281,3 +281,44 @@ MS:SubscribeAsync('EXTERNAL_RESPONDER', function(t : table)
 		end
 	end
 end)
+
+-- If a player owns an asset and decides to sell it, then they invoke the server and the server checks to see if they have the item.
+-- If they do, it removes it from their inventory and character then awards the cash. The client then reloads the icons in their inventory.
+
+game.ReplicatedStorage.SellAssets.OnServerInvoke = function(plr : Player, asset_name : string)
+	if not plr.Character then
+		return
+	end
+	
+	local item = get_item(asset_name)
+	
+	if item then
+		local existing_inventory_item = table.find(server_data['Player_' .. plr.UserId].Inventory, item.Name)
+		
+		if existing_inventory_item then
+			table.remove(server_data['Player_' .. plr.UserId].Inventory, existing_inventory_item)
+			server_data['Player_' .. plr.UserId].Gold += item:GetAttribute('Price')
+			
+			if item:IsA('Gear') then
+				local hum = plr.Character:FindFirstChildOfClass('Humanoid')
+				if hum then
+					hum:UnequipTools()
+				end
+				for _, v in pairs(plr.Backpack:GetChildren()) do
+					if v.Name == item.Name then
+						v:Destroy()
+					end
+				end
+			end
+
+			for _, v in pairs(plr.Character:GetChildren()) do
+				if v.Name == item.Name then 
+					v:Destroy() 
+				end
+			end
+			
+			return {OK = true}
+		end
+	end
+	return {OK = false}
+end
